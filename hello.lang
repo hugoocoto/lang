@@ -1,0 +1,31 @@
+; The . take the first expression and pass it as the first argument
+
+
+; Result is one of Error or a value of type T
+Type Result <T> := Tagged 
+  | v: T
+  | Err  
+
+; as everything is a expression you can use parenthesis to nest Tagged declarations
+Type NumResult := Tagged 
+  | (Tagged | some | any )
+  | Err  
+
+
+; A might be Err or a number between 5 and 10
+a: Result(Int) := 5, 10 -> Random:between()
+
+; a: int == a:v == (a -> match | int i :: i)
+
+a 
+-> match
+    | Int(x) :: x 
+      -> (match
+          | 1 -> 3
+          | 2 -> 2
+          | 3 -> 1
+          | ? -> 0
+         )
+    | Err :: abort("Error:" + Err:repr)
+-> print
+

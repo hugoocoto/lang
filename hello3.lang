@@ -1,0 +1,118 @@
+; =================================================================
+; LANGUAGE OVERVIEW 
+; =================================================================
+
+; ---------------------------------------------------------
+; 1. PRODUCT TYPES (Structs / Tuples) -> '&' Operator
+; ---------------------------------------------------------
+; Used to group data together (this AND that)
+Type Vec2 := 
+  & x: Int 
+  & y: Int
+
+Type Profile := id: Int & name: String
+
+; Implicit one-line tuples
+coordinate: Int & Int := 5, 6 
+
+; ---------------------------------------------------------
+; 2. SUM TYPES (Tagged Unions) -> '|' Operator
+; ---------------------------------------------------------
+; Used to represent mutually exclusive options (this OR that)
+Type Result<T> := Tagged 
+  | ok: T
+  | err: Err  
+
+; ---------------------------------------------------------
+; 3. ASSIGNMENT & AUTO-BOXING
+; ---------------------------------------------------------
+a := 5
+b: Int := 10
+
+; The compiler infers the correct variant if the type matches (Auto-boxing)
+success: Result<Int> := 200                 ; 200 is an Int, gets boxed into 'ok'
+
+; Dynamic instantiation by pipelining a value into a literal symbol
+failure: Result<Int> := "Network error" -> :err ; Creates an Err and boxes it into 'err'
+
+; ---------------------------------------------------------
+; 4. SCOPES, FUNCTIONS, AND COROUTINES (Everything is a block)
+; ---------------------------------------------------------
+; A normal scope evaluates to its last expression
+result := {
+    x := 5
+    x + 10
+}
+
+; A function is a scope that declares what enters ('->') at the beginning
+add := { a: Int, b: Int -> 
+    a + b 
+}
+
+; Calls can be made via pipeline or classic function syntax
+10, 5 -> add
+add(10, 5)
+
+; A coroutine is simply a function that uses 'yield' in its body.
+; 'yield' exports a value, pauses the scope, and receives a value upon resuming.
+accumulator := { start: Int ->
+    ; 1. 'start' flows out into the yield.
+    ; 2. Upon resuming, the injected data flows from yield into 'modifier'.
+    modifier: Int := start -> yield
+    
+    start + modifier
+}
+
+; Coroutine usage:
+my_coroutine := 10 -> accumulator    ; Instantiation
+output_1 := my_coroutine()           ; Yields 10
+final_result := 5 -> my_coroutine    ; Injects 5. Returns 15.
+
+; ---------------------------------------------------------
+; 5. PATTERN MATCHING & PIPELINES
+; ---------------------------------------------------------
+; Data flows using '->'. 
+; Natural variable extraction: 'variable: variant'
+; Default fallback/wildcard: '?'
+
+response: Result<Int> := 5, 10 -> Random.between()
+
+response -> match
+    | x: ok -> x 
+        -> match
+            | 1 -> 3
+            | 2 -> 2
+            | ? -> 0       
+    ; 'e' is extracted as type 'err' and implicitly flows into the abort() function
+    | e: err -> abort() 
+-> print()
+
+; ---------------------------------------------------------
+; 6. ERROR RAILS (Railway Operators)
+; ---------------------------------------------------------
+; Operators designed to handle errors without breaking the main pipeline
+
+process_file := { path: String ->
+    path -> File.read()
+    
+    ; '!>' Operator: Only executes if the current flow is an 'err' variant
+    !> "Failed to read: " + path -> :err  
+}
+
+; '!!' Operator: Extracts the 'ok' value, or panics/aborts if it receives an 'err'
+content := "config.json" 
+    -> process_file() 
+    !!                   
+    -> print()
+
+
+
++ packing, unpacking struncts
++ arrays, hashmaps consistent syntax
++ self para functiones en una struct
++ const default, mut kword?
++ Compiler intrinsics: compiler time functions (import)
+  Math := "math" -> import !!
+  Random := "random" -> exists 
+  !> (:url -> download) 
+  -> import !!

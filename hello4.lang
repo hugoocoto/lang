@@ -1,0 +1,163 @@
+; ==============================================================================
+; LANGUAGE OVERVIEW - CHEAT SHEET
+; ==============================================================================
+
+; ---------------------------------------------------------
+; 1. PRODUCT TYPES (Structs / Tuples) -> '&' Operator
+; ---------------------------------------------------------
+; Used to group data together (this AND that)
+Type Vec2 := 
+  & x: Int 
+  & y: Int
+
+Type Profile := & id: Int & name: String
+
+; Packing: Implicit one-line tuples auto-box into Structs
+origin: Vec2 := 0, 0 
+
+; Unpacking: Use the '&' operator to extract variables
+& x, & y := origin
+; x == 0, y == 0
+
+; Unpacking directly in a pipeline:
+origin -> ( & x, & y ) -> { x + y } 
+
+; ---------------------------------------------------------
+; 2. SUM TYPES (Tagged Unions) -> '|' Operator
+; ---------------------------------------------------------
+; Used to represent mutually exclusive options (this OR that)
+Type Result<T> := Tagged 
+  | ok: T
+  | err: Err  
+
+; ---------------------------------------------------------
+; 3. IMMUTABILITY, ASSIGNMENT & AUTO-BOXING
+; ---------------------------------------------------------
+; By default, ALL variables are constants (immutable)
+a := 5
+; a := 6 ; ERROR: Cannot reassign an immutable variable
+
+; Use 'mut' to allow reassignment using the same ':=' operator
+mut b := 10
+b := 20
+
+; Auto-boxing: The compiler infers the variant if the type matches
+success: Result<Int> := 200                 ; 200 gets boxed into 'ok'
+failure: Result<Int> := "Fail" -> :err      ; String gets boxed into an Err 'err'
+
+; ---------------------------------------------------------
+; 4. COLLECTIONS & SAFE ACCESS (Arrays & HashMaps)
+; ---------------------------------------------------------
+; Arrays are just lists of types
+players: [String] := ["Alice", "Bob"]
+
+; HashMaps use the pipeline syntax for both type definition and instantiation
+scores: [String -> Int] := ["Alice" -> 100, "Bob" -> 85]
+
+; Accessing Collections: Treat them like functions.
+; The index/key flows into the collection, returning a Result<T> to prevent crashes.
+winner := 0 -> players !!                ; Extracts "Alice" or panics if index doesn't exist
+alice_score := "Alice" -> scores !!      ; Extracts 100
+
+; Safe out-of-bounds handling using railway operators:
+99 -> players 
+    !> "Player index does not exist" -> print()
+
+; ---------------------------------------------------------
+; 5. SCOPES, FUNCTIONS, AND COROUTINES
+; ---------------------------------------------------------
+; A normal scope evaluates expressions separated by ';'. Returns the last one.
+result := {
+    mut x := 5;
+    x := 10;
+    x + 10      ; No semicolon = return value
+}
+
+; Function parameters live OUTSIDE the block, flowing into it '->'
+add := (a: Int, b: Int) -> { 
+    a + b 
+}
+
+; Calls can be made via pipeline or classic function syntax
+10, 5 -> add
+add(10, 5)
+
+; Coroutines use 'yield' to pause and receive injected data
+accumulator := (start: Int) -> {
+    ; 1. 'start' flows out into the yield.
+    ; 2. Upon resuming, the injected data flows from yield into 'modifier'.
+    modifier: Int := start -> yield;
+    start + modifier
+}
+
+my_coroutine := 10 -> accumulator    ; Instantiation
+output_1 := my_coroutine()           ; Yields 10
+final_result := 5 -> my_coroutine    ; Injects 5. Returns 15.
+
+; ---------------------------------------------------------
+; 6. STRUCT METHODS (Self Context)
+; ---------------------------------------------------------
+; Use 'extend' to attach functions to an existing Struct
+extend Vec2 {
+    ; 'self' is passed implicitly to access struct properties
+    sum_axes := (self) -> { 
+        self.x + self.y 
+    }
+}
+
+; Method usage via dot notation
+total := origin.sum_axes()
+
+; ---------------------------------------------------------
+; 7. PATTERN MATCHING & PIPELINES
+; ---------------------------------------------------------
+; Data flows using '->'. 
+; Natural variable extraction: 'variable: variant'
+
+response: Result<Int> := 5, 10 -> Random.between()
+
+response -> match
+    | x: ok -> x 
+        -> match
+            | 1 -> 3
+            | 2 -> 2
+            | ? -> 0        ; Default fallback / wildcard
+            
+    ; 'e' is extracted as type 'err' and implicitly flows into abort()
+    | e: err -> abort() 
+-> print()
+
+; ---------------------------------------------------------
+; 8. ERROR RAILS (Railway Operators)
+; ---------------------------------------------------------
+process_file := (path: String) -> {
+    path -> File.read();
+    
+    ; '!>' Operator: Only executes if the current flow is an 'err' variant
+    !> "Failed to read: " + path -> :err  
+}
+
+; '!!' Operator: Extracts the 'ok' value, or panics/aborts if 'err'
+content := "config.json" 
+    -> process_file() 
+    !!                   
+    -> print()
+
+; ---------------------------------------------------------
+; 9. COMPILER INTRINSICS & MACROS (Compile-Time)
+; ---------------------------------------------------------
+; Compile-time functions are evaluated BEFORE the program runs.
+; If the compiler sees a literal string/symbol entering an intrinsic like 'import', 
+; it executes the pipeline during the build process.
+
+; Standard compilation import:
+Math := "math" -> import !!
+
+; Advanced fallback dependency management pipeline:
+; 1. Checks if local "random.script" exists.
+; 2. !> If it fails (err), diverts to download it from the URL.
+; 3. -> Whichever string survives flows into the compiler's import function.
+; 4. !! Extracts the module or halts the build entirely.
+Random := "random" -> exists 
+    !> (:url -> download) 
+    -> import !!

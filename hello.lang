@@ -1,6 +1,3 @@
-; The . take the first expression and pass it as the first argument
-
-
 ; Result is one of Error or a value of type T
 Type Result <T> := Tagged 
   | v: T
@@ -29,3 +26,28 @@ a
     | Err :: abort("Error:" + Err:repr)
 -> print
 
+
+; Struct 
+Type x :=
+  | i: Int
+  | f: Float
+
+; You can acced a struct by its type
+Type x :=
+| i: Int
+| f: Float
+; x:Int == x:i
+
+; This scope returns a Int
+a:= :Int { 9 }
+
+; This scope accepts the parameters a and b
+a := Int a, Int b: Int { a + b }
+
+; 'Call' a scope
+result := int a, int b: Int { a + b }(2,3)
+
+; Reentry scope
+a := int i %Int : Int {
+    yield 4 -> i
+}

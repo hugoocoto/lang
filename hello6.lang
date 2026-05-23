@@ -1,0 +1,227 @@
+; ==============================================================================
+; LENGUAJE OVERVIEW - ESPECIFICACIÓN OFICIAL
+; ==============================================================================
+; Filosofía principal: 
+; 1. Todo es una expresión.
+; 2. Los datos siempre fluyen de izquierda a derecha usando '->'.
+; 3. Las variables y parámetros se ligan a valores/bloques usando ':=' y '=>'.
+; ==============================================================================
+
+; ---------------------------------------------------------
+; 1. VARIABLES, MUTABILIDAD Y ASIGNACIÓN (:=)
+; ---------------------------------------------------------
+; Las variables son inmutables por defecto.
+a := 5
+
+; Se usa 'mut' para permitir reasignación. El operador sigue siendo ':='.
+mut contador := 0
+contador := contador + 1
+
+; Declaración en cadena (se evalúa de derecha a izquierda)
+x := y := z := 0
+
+; Inicialización Automática (Zero-Values): 
+; Si se declara el tipo pero no se asigna, usa los valores por defecto.
+; (Si el tipo no tiene default, el compilador exigiría inicialización).
+vidas: Int := 3
+nombre_vacio: String
+
+
+; ---------------------------------------------------------
+; 2. PRODUCT TYPES (Structs / Tuples) -> Operador '&'
+; ---------------------------------------------------------
+; Agrupación de datos. Soportan valores por defecto y métodos integrados.
+Type Usuario := 
+  & id: Int
+  & nombre: String := "Anónimo"
+  & rol: String := "user"
+  
+  ; Los métodos son campos con funciones que reciben 'self'
+  & es_admin := (self: Usuario) => { self.rol == "admin" }
+
+; -- A) Instanciación --
+; Forma 1: Posicional (Perfecto para tuplas pequeñas)
+coordenada: Vec2 := 10, 20
+
+; Forma 2: Nombrada (Ignora los que tienen default)
+; Requiere Tipado Nominal explícito a la izquierda
+jefe: Usuario := (
+    .id := 99,
+    .rol := "admin"
+)
+
+; Forma 3: Modo Constructor (Inferencia hacia la derecha)
+Usuario( .id := 1, .nombre := "Carlos" ) -> guardar_bd()
+
+; -- B) Unpacking (Desestructuración implícita) --
+coordenada := 10, 20
+(x, y) := coordenada
+
+; Unpacking súper limpio directamente en un pipeline:
+coordenada -> (x, y) => { x + y } -> print()
+
+
+; ---------------------------------------------------------
+; 3. SUM TYPES (Uniones Etiquetadas) -> Operador '|'
+; ---------------------------------------------------------
+; Representan opciones mutuamente excluyentes.
+Type Result<T> := Tagged 
+  | ok: T
+  | err: Err  
+
+; Auto-boxing: El compilador empaqueta el valor si el tipo coincide
+exito: Result<Int> := 200                 ; Se empaqueta en 'ok'
+
+; Etiquetado explícito usando el pipeline y un símbolo (Símbolo de variante)
+fallo: Result<Int> := "Red caída" -> :err ; Se empaqueta en 'err'
+
+
+; ---------------------------------------------------------
+; 4. COLECCIONES Y ACCESO (La Operación Primaria)
+; ---------------------------------------------------------
+; Se instancian y se leen usando el flujo natural de izquierda a derecha.
+
+; Arrays: Lista de tipos
+jugadores: [String] := ["Alice", "Bob"]
+
+; HashMaps: [Clave -> Valor] (Sintaxis coherente con la teoría de categorías)
+scores: [String -> Int] := ["Alice" -> 100, "Bob" -> 85]
+
+; -- Leer: El índice o clave fluye hacia la colección --
+; Devuelve siempre un Result<T> para seguridad en memoria.
+ganador := 0 -> jugadores !!
+nota_alice := "Alice" -> scores !!
+
+; -- Escribir: Se llama a los métodos internos del struct --
+"Charlie" -> jugadores.push()
+("Bob", 90) -> scores.set()
+
+
+; ---------------------------------------------------------
+; 5. SCOPES, FUNCIONES (=>) Y FLUJO DE DATOS (->)
+; ---------------------------------------------------------
+; Los bloques separan expresiones con ';'. Devuelven la última expresión.
+calcular := {
+    mut temp := 5;
+    temp := temp * 2;
+    temp + 10                 ; Sin ';' = valor de retorno
+}
+
+; Parámetros (=>): Se definen FUERA del bloque y se mapean hacia adentro.
+sumar := (a: Int, b: Int) => { 
+    a + b 
+}
+
+; Llamada (->): Los datos reales fluyen hacia la función.
+10, 5 -> sumar
+sumar(10, 5)                  ; Sintaxis clásica también permitida
+
+; -- Corrutinas (Generadores) --
+; Usan 'yield'. Los datos fluyen hacia afuera, y al reanudar, fluyen hacia adentro.
+acumulador := (inicio: Int) => {
+    modificador: Int := inicio -> yield;
+    inicio + modificador
+}
+mi_corrutina := 10 -> acumulador    ; Instancia corrutina
+mi_corrutina()                      ; Devuelve 10
+5 -> mi_corrutina                   ; Inyecta 5, devuelve 15
+
+
+; ---------------------------------------------------------
+; 6. PATTERN MATCHING
+; ---------------------------------------------------------
+; Extracción natural de variables con 'variable: variante'
+; '?' sirve como comodín/default.
+
+respuesta: Result<Int> := 5, 10 -> Random.between()
+
+respuesta -> match
+    | x: ok -> x 
+        -> match
+            | 1 -> 3
+            | ? -> 0
+            
+    ; Se extrae el error en 'e' y fluye hacia abort()
+    | e: err -> abort() 
+-> print()
+
+
+; ---------------------------------------------------------
+; 7. RIELES DE ERROR (Operadores !> y !!)
+; ---------------------------------------------------------
+cargar_config := (ruta: String) => {
+    ruta -> File.read();
+    
+    ; '!>' (Desvío): Ejecuta el bloque SOLO si el flujo actual es un 'err'
+    !> "Fallo al leer " + ruta -> :err  
+}
+
+; '!!' (Assert): Extrae el valor 'ok'. Si es 'err', aborta.
+; Permite inyectar un mensaje de error personalizado a la derecha.
+config := "config.json" 
+    -> cargar_config() 
+    !! "Error Fatal: No se pudo cargar la configuración de arranque." 
+
+
+; ---------------------------------------------------------
+; 8. COMPILER INTRINSICS (Gestión de Dependencias en Tiempo de Compilación)
+; ---------------------------------------------------------
+; El compilador evalúa funciones como 'import' o 'download' durante el build
+; si los valores de entrada son literales de texto o símbolos.
+
+; Importación estándar de módulo:
+Math := "math" -> import !!
+
+; Gestor de paquetes integrado (Fallback Pipeline):
+; 1. Comprueba local. 2. Si falla (!>), descarga. 3. Importa. 4. Asegura éxito (!!).
+Random := "random" -> exists 
+    !> (:url -> download) 
+    -> import !!
+
+; ---------------------------------------------------------
+; 9. BUCLES, RECURSIÓN Y RETORNOS (Again & Done)
+; ---------------------------------------------------------
+; En este lenguaje no existen bloques 'for' o 'while', ni la palabra 'return'.
+; Toda función (nombrada o anónima) actúa como un bucle en potencia.
+; El flujo de una función DEBE terminar obligatoriamente en uno de estos dos sumideros:
+; 
+; -> Again : Toma el dato, salta al inicio de la función actual y lo inyecta como parámetro.
+; -> Done  : Toma el dato, detiene la función y lo devuelve hacia afuera.
+
+; -- Bucle Anónimo (Iterar un Array) --
+; Inyectamos el estado inicial (índice 0) hacia la función anónima.
+jugadores: [String] := ["Alice", "Bob", "Charlie"]
+
+0 -> (idx: Int) => {
+    idx -> jugadores -> match
+        | j: ok -> {
+            j -> print();
+            idx + 1 -> Again           ; REPETIR: Vuelve al inicio con idx + 1
+        }
+        | e: err -> true -> Done       ; TERMINAR: Fin del array, devolvemos 'true'
+}
+
+; -- Función Nombrada como Bucle de Reintentos (while-loop) --
+; Gracias al 'Again', la recursión de cola es implícita, limpia y no desborda la memoria.
+conectar_bd := (intento: Int) => {
+    
+    intento > 3 -> match
+        ; Condición de salida por límite (Termina y devuelve Error)
+        | true -> "Timeout de red" -> :err -> Done
+        
+        | false -> base_datos.intentar() -> match
+            ; Éxito (Termina y devuelve Ok)
+            | conexion: ok -> conexion -> :ok -> Done
+            
+            ; Fallo (Repite sumando 1 al intento)
+            | e: err -> intento + 1 -> Again
+}
+
+; Llamada inicial inyectando el primer intento
+resultado := 1 -> conectar_bd
+
+; -- Retorno simple en funciones lineales --
+; Si no hay bucle, 'Done' simplemente actúa como el 'return' clásico.
+sumar := (a: Int, b: Int) => { 
+    a + b -> Done 
+}
